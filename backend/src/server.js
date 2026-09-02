@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
 require('dotenv').config();
+const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./swagger");
 
 const app = express();
 app.use(cors());
@@ -379,6 +381,13 @@ app.delete('/api/templates/:id', auth, async (req, res) => {
   }
 });
 
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec)
+);
+
 app.listen(process.env.PORT || 5000, () =>
   console.log(`Backend running on http://localhost:${process.env.PORT || 5000}`)
 );
+
