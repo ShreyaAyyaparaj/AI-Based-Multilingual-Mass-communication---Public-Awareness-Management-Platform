@@ -3,109 +3,915 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 
 const API = 'http://localhost:5000/api';
-type Tab = 'Dashboard' | 'Recipients' | 'Audiences' | 'Campaigns' | 'Templates' | 'Settings';
-type ModalType = 'recipient' | 'audience' | 'campaign' | 'template' | 'profile' | null;
-type CampaignStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-const emptyRecipient = { first_name:'', last_name:'', email:'', phone:'', age:'', gender:'', state:'Karnataka', district:'', city:'', language:'Kannada', occupation:'', status:'ACTIVE' };
-const steps = ['Information','Audience','Content','Languages','Channels','Schedule','Review'];
-const channels = [
-  { id:'SMS', icon:'▣', label:'SMS', desc:'Short, direct mobile messages', ready:true },
-  { id:'Email', icon:'✉', label:'Email', desc:'Detailed public communication', ready:false },
-  { id:'WhatsApp', icon:'◌', label:'WhatsApp', desc:'Conversational messaging', ready:false },
-  { id:'Push', icon:'◈', label:'Push', desc:'Application notifications', ready:false },
-  { id:'Web', icon:'◎', label:'Web', desc:'Website and portal notice', ready:false },
+type Tab = 'Dashboard' | 'Recipients' | 'Audiences' | 'Campaigns' | 'Templates';
+
+type ModalType = 'recipient' | 'audience' | 'campaign' | 'template' | 'profile' | null;
+
+const navItems: { key: Tab; label: string; icon: string }[] = [
+  { key: 'Dashboard', label: 'Dashboard', icon: '▦' },
+  { key: 'Recipients', label: 'Recipients', icon: '♙' },
+  { key: 'Audiences', label: 'Audiences', icon: '◈' },
+  { key: 'Campaigns', label: 'Campaigns', icon: '◉' },
+  { key: 'Templates', label: 'Templates', icon: '▤' },
 ];
 
-function App(){
-  const [token,setToken]=useState(localStorage.getItem('token')||'');
-  const [admin,setAdmin]=useState<any>(()=>{try{return JSON.parse(localStorage.getItem('admin')||'null')}catch{return null}});
-  const [tab,setTab]=useState<Tab>('Dashboard');
-  const [login,setLogin]=useState({email:'admin@communication.com',password:'Admin@123'});
-  const [error,setError]=useState(''); const [notice,setNotice]=useState(''); const [loading,setLoading]=useState(false);
-  const [modal,setModal]=useState<ModalType>(null); const [editing,setEditing]=useState<any>(null); const [search,setSearch]=useState('');
-  const [stats,setStats]=useState({recipients:0,audiences:0,campaigns:0,templates:0});
-  const [recipients,setRecipients]=useState<any[]>([]); const [audiences,setAudiences]=useState<any[]>([]); const [campaigns,setCampaigns]=useState<any[]>([]); const [templates,setTemplates]=useState<any[]>([]);
-  const [campaignStep,setCampaignStep]=useState<CampaignStep>(1);
-  const [campaignDraft,setCampaignDraft]=useState<any>({name:'',description:'',status:'DRAFT',audience_id:'',content:'',languages:['Kannada'],channels:['SMS'],schedule:'Manual activation'});
-  const authHeaders=useMemo(()=>({Authorization:`Bearer ${token}`}),[token]);
-  const request=async(path:string,options:RequestInit={})=>{const headers={...authHeaders,...(options.headers||{})};const r=await fetch(API+path,{...options,headers});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.message||'Request failed');return data};
-  const load=async(target=tab)=>{if(!token)return;setLoading(true);setError('');try{if(target==='Dashboard'){const [s,c,a]=await Promise.all([request('/stats'),request('/campaigns'),request('/audiences')]);setStats(s);setCampaigns(c);setAudiences(a)} if(target==='Recipients')setRecipients(await request('/recipients')); if(target==='Audiences')setAudiences(await request('/audiences')); if(target==='Campaigns')setCampaigns(await request('/campaigns')); if(target==='Templates')setTemplates(await request('/templates'));}catch(e:any){setError(e.message)}finally{setLoading(false)}};
-  useEffect(()=>{if(token)load(tab)},[token,tab]);
-  const doLogin=async(e:FormEvent)=>{e.preventDefault();setError('');try{const r=await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(login)});const d=await r.json();if(!r.ok)throw new Error(d.message||'Login failed');localStorage.setItem('token',d.token);localStorage.setItem('admin',JSON.stringify(d.admin));setAdmin(d.admin);setToken(d.token)}catch(e:any){setError(e.message)}};
-  const logout=()=>{localStorage.removeItem('token');localStorage.removeItem('admin');setToken('');setAdmin(null)};
-  const openModal=(type:ModalType,data:any=null)=>{setError('');setNotice('');setEditing(data??(type==='recipient'?{...emptyRecipient}:type==='audience'?{name:'',description:''}:type==='campaign'?{name:'',description:'',status:'DRAFT',audience_id:''}:type==='template'?{title:'',template_type:'Awareness',channel:'SMS',content:''}:type==='profile'?{...admin}:null));setModal(type)};
-  const closeModal=()=>{setModal(null);setEditing(null)};
-  const saveEntity=async(kind:ModalType)=>{try{if(kind==='recipient'){const id=editing.recipient_id;await request(id?`/recipients/${id}`:'/recipients',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(editing)});closeModal();setNotice(id?'Recipient updated.':'Recipient added.');await load('Recipients')}
-    if(kind==='audience'){const id=editing.audience_id;await request(id?`/audiences/${id}`:'/audiences',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(editing)});closeModal();setNotice(id?'Audience updated.':'Audience created.');await load('Audiences')}
-    if(kind==='campaign'){const id=editing.campaign_id;const saved=await request(id?`/campaigns/${id}`:'/campaigns',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:editing.name,description:editing.description,status:editing.status})});const campaignId=id||saved.campaign_id;if(editing.audience_id)await request(`/campaigns/${campaignId}/audience`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({audience_id:Number(editing.audience_id)})});closeModal();setNotice(id?'Campaign updated.':'Campaign created.');await load('Campaigns')}
-    if(kind==='template'){const id=editing.template_id;await request(id?`/templates/${id}`:'/templates',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(editing)});closeModal();setNotice(id?'Template updated.':'Template created.');await load('Templates')}
-    if(kind==='profile'){const updated=await request('/admin/profile',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({full_name:editing.full_name,email:editing.email})});localStorage.setItem('admin',JSON.stringify(updated.admin));setAdmin(updated.admin);closeModal();setNotice('Administrator profile updated.')}
-  }catch(e:any){setError(e.message)}};
-  const remove=async(kind:string,id:number)=>{const labels:any={recipient:'recipient',audience:'audience',campaign:'campaign',template:'template'};if(!confirm(`Delete/deactivate this ${labels[kind]}?`))return;try{await request(kind==='recipient'?`/recipients/${id}`:kind==='audience'?`/audiences/${id}`:kind==='campaign'?`/campaigns/${id}`:`/templates/${id}`,{method:'DELETE'});setNotice(`${labels[kind]} updated successfully.`);await load(tab)}catch(e:any){setError(e.message)}};
-  const go=(next:Tab)=>{setTab(next);setSearch('');setError('');setNotice('')};
-  const filteredRecipients=recipients.filter(r=>`${r.first_name} ${r.last_name} ${r.email||''} ${r.phone||''} ${r.city||''}`.toLowerCase().includes(search.toLowerCase()));
-  const filteredAudiences=audiences.filter(a=>`${a.name} ${a.description||''}`.toLowerCase().includes(search.toLowerCase()));
-  const filteredCampaigns=campaigns.filter(c=>`${c.name} ${c.description||''} ${c.status||''}`.toLowerCase().includes(search.toLowerCase()));
-  const filteredTemplates=templates.filter(t=>`${t.title} ${t.template_type} ${t.content}`.toLowerCase().includes(search.toLowerCase()));
+const emptyRecipient = {
+  first_name: '',
+  last_name: '',
+  email: '',
+  phone: '',
+  age: '',
+  gender: '',
+  state: 'Karnataka',
+  district: '',
+  city: '',
+  language: 'Kannada',
+  occupation: '',
+  status: 'ACTIVE',
+};
 
-  if(!token)return <Login login={login} setLogin={setLogin} doLogin={doLogin} error={error}/>;
-  return <div className="app-shell">
-    <Sidebar tab={tab} go={go} admin={admin} onProfile={()=>openModal('profile')} logout={logout}/>
-    <div className="app-main">
-      <header className="topbar"><div className="crumb">SAMVAAD <span>/</span> {tab==='Settings'?'System Settings':tab}</div><div className="top-tools"><div className="search-box"><span>⌕</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search workspace"/></div><button className="top-icon">?</button><button className="top-icon">♢</button><button className="top-profile" onClick={()=>openModal('profile')}>{(admin?.full_name||'S').charAt(0).toUpperCase()}</button></div></header>
-      <main className="main-content">
-        {error&&<div className="alert error-alert">{error}<button onClick={()=>setError('')}>×</button></div>}
-        {notice&&<div className="alert success-alert">{notice}<button onClick={()=>setNotice('')}>×</button></div>}
-        {loading?<div className="loading-state"><div className="loader"></div><span>Loading workspace…</span></div>:<>
-          {tab==='Dashboard'&&<Dashboard admin={admin} stats={stats} campaigns={campaigns} audiences={audiences} go={go} openCampaign={()=>{setCampaignDraft({name:'',description:'',status:'DRAFT',audience_id:'',content:'',languages:['Kannada'],channels:['SMS'],schedule:'Manual activation'});setCampaignStep(1);go('Campaigns')}}/>}
-          {tab==='Recipients'&&<RecipientPage rows={filteredRecipients} total={recipients.length} onAdd={()=>openModal('recipient')} onEdit={(r:any)=>openModal('recipient',{...r})} onRemove={(id:number)=>remove('recipient',id)}/>} 
-          {tab==='Audiences'&&<AudiencePage rows={filteredAudiences} onAdd={()=>openModal('audience')} onEdit={(a:any)=>openModal('audience',{...a})} onRemove={(id:number)=>remove('audience',id)}/>} 
-          {tab==='Campaigns'&&<CampaignPage rows={filteredCampaigns} audiences={audiences} onAdd={()=>{setCampaignDraft({name:'',description:'',status:'DRAFT',audience_id:'',content:'',languages:['Kannada'],channels:['SMS'],schedule:'Manual activation'});setCampaignStep(1)}} onEdit={(c:any)=>openModal('campaign',{...c,audience_id:audiences.find(a=>a.name===c.audience)?.audience_id||''})} onRemove={(id:number)=>remove('campaign',id)} draft={campaignDraft} setDraft={setCampaignDraft} step={campaignStep} setStep={setCampaignStep} onCreate={()=>{setNotice('Campaign saved as draft.');setCampaignStep(1);load('Campaigns')}}/>}
-          {tab==='Templates'&&<TemplatePage rows={filteredTemplates} onAdd={()=>openModal('template')} onEdit={(t:any)=>openModal('template',{...t})} onRemove={(id:number)=>remove('template',id)}/>} 
-          {tab==='Settings'&&<SettingsPage admin={admin} onProfile={()=>openModal('profile')} logout={logout}/>} 
-        </>}
-      </main>
+function App() {
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
+  const [admin, setAdmin] = useState<any>(() => {
+    try { return JSON.parse(localStorage.getItem('admin') || 'null'); } catch { return null; }
+  });
+  const [tab, setTab] = useState<Tab>('Dashboard');
+  const [login, setLogin] = useState({ email: 'admin@communication.com', password: 'Admin@123' });
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [modal, setModal] = useState<ModalType>(null);
+  const [aiStudioCampaign, setAiStudioCampaign] = useState<any>(null);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [aiNotice, setAiNotice] = useState('');
+  const [aiPage, setAiPage] = useState<'generated' | 'quality'>('generated');
+  const [aiQuality, setAiQuality] = useState<any>(null);
+  const [aiQualityLoading, setAiQualityLoading] = useState(false);
+  const [aiConfig, setAiConfig] = useState({
+    scenario: '',
+    tone: 'Informative',
+    audience_id: '',
+    location: 'All selected locations',
+    languages: ['English'],
+    channels: ['SMS'],
+    usePreferredLanguages: true,
+  });
+
+  const [stats, setStats] = useState({ recipients: 0, audiences: 0, campaigns: 0, templates: 0 });
+  const [recipients, setRecipients] = useState<any[]>([]);
+  const [audiences, setAudiences] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+
+  const [editing, setEditing] = useState<any>(null);
+  const [search, setSearch] = useState('');
+
+  const authHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
+
+  const request = async (path: string, options: RequestInit = {}) => {
+    const headers = { ...authHeaders, ...(options.headers || {}) };
+    const r = await fetch(API + path, { ...options, headers });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.message || 'Request failed');
+    return data;
+  };
+
+  const load = async (target = tab) => {
+    if (!token) return;
+    setLoading(true);
+    setError('');
+    try {
+      const [s, c, a, r, t] = await Promise.all([
+        request('/stats'),
+        request('/campaigns'),
+        request('/audiences'),
+        request('/recipients'),
+        request('/templates'),
+      ]);
+      setStats(s);
+      setCampaigns(c);
+      setAudiences(a);
+      setRecipients(r);
+      setTemplates(t);
+    } catch (e: any) {
+      if (String(e.message).toLowerCase().includes('invalid token') || String(e.message).toLowerCase().includes('authentication')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('admin');
+        setToken('');
+        setAdmin(null);
+      }
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) load(tab);
+  }, [token, tab]);
+
+  const doLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const r = await fetch(API + '/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(login),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || 'Login failed');
+      localStorage.setItem('token', d.token);
+      localStorage.setItem('admin', JSON.stringify(d.admin));
+      setAdmin(d.admin);
+      setToken(d.token);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('admin');
+    setToken('');
+    setAdmin(null);
+  };
+
+  const openModal = (type: ModalType, data: any = null) => {
+    setError('');
+    setNotice('');
+    setEditing(data ?? (
+      type === 'recipient' ? { ...emptyRecipient } :
+      type === 'audience' ? { name: '', description: '' } :
+      type === 'campaign' ? { name: '', description: '', status: 'DRAFT', audience_id: '', scenario: '', location: '', languages: ['English'], channels: ['SMS'], tone: 'Informative' } :
+      type === 'template' ? { title: '', template_type: 'Awareness', channel: 'SMS', content: '' } :
+      type === 'profile' ? { ...admin } : null
+    ));
+    setModal(type);
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setEditing(null);
+  };
+
+  const saveEntity = async (kind: ModalType) => {
+    try {
+      if (kind === 'recipient') {
+        const id = editing.recipient_id;
+        await request(id ? `/recipients/${id}` : '/recipients', {
+          method: id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editing),
+        });
+        closeModal();
+        setNotice(id ? 'Recipient updated successfully.' : 'Recipient added successfully.');
+        await load('Recipients');
+      }
+
+      if (kind === 'audience') {
+        const id = editing.audience_id;
+        await request(id ? `/audiences/${id}` : '/audiences', {
+          method: id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editing),
+        });
+        closeModal();
+        setNotice(id ? 'Audience updated successfully.' : 'Audience created successfully.');
+        await load('Audiences');
+      }
+
+      if (kind === 'campaign') {
+        const id = editing.campaign_id;
+        const saved = await request(id ? `/campaigns/${id}` : '/campaigns', {
+          method: id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: editing.name,
+            description: editing.scenario || editing.description,
+            status: editing.status || 'DRAFT',
+          }),
+        });
+        const campaignId = id || saved.campaign_id;
+        if (editing.audience_id) {
+          await request(`/campaigns/${campaignId}/audience`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audience_id: Number(editing.audience_id) }),
+          });
+        }
+        await request(`/campaigns/${campaignId}/ai-config`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            scenario: editing.scenario || editing.description || editing.name,
+            location: editing.location || '',
+            tone: editing.tone || 'Informative',
+            languages: editing.languages?.length ? editing.languages : ['English'],
+            channels: editing.channels?.length ? editing.channels : ['SMS'],
+            usePreferredLanguages: editing.usePreferredLanguages !== false,
+          }),
+        });
+        closeModal();
+        await load('Campaigns');
+        const selectedAudience = audiences.find((a: any) => Number(a.audience_id) === Number(editing.audience_id));
+        openAiStudio({
+          campaign_id: campaignId,
+          name: editing.name,
+          description: editing.scenario || editing.description,
+          status: editing.status || 'DRAFT',
+          audience: selectedAudience?.name || 'General Public',
+          audience_id: editing.audience_id || '',
+          scenario: editing.scenario || editing.description || '',
+          location: editing.location || 'All selected locations',
+          languages: editing.languages || ['English'],
+          channels: editing.channels || ['SMS'],
+          tone: editing.tone || 'Informative',
+        });
+        setNotice(id ? 'Campaign updated. AI communication is ready to review.' : 'Campaign created. AI communication is ready to generate.');
+      }
+
+      if (kind === 'template') {
+        const id = editing.template_id;
+        await request(id ? `/templates/${id}` : '/templates', {
+          method: id ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editing),
+        });
+        closeModal();
+        setNotice(id ? 'Template updated successfully.' : 'Template created successfully.');
+        await load('Templates');
+      }
+
+      if (kind === 'profile') {
+        const updated = await request('/admin/profile', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ full_name: editing.full_name, email: editing.email }),
+        });
+        localStorage.setItem('admin', JSON.stringify(updated.admin));
+        setAdmin(updated.admin);
+        closeModal();
+        setNotice('Administrator profile updated successfully.');
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const removeRecipient = async (id: number) => {
+    if (!confirm('Deactivate this recipient?')) return;
+    try {
+      await request(`/recipients/${id}`, { method: 'DELETE' });
+      setNotice('Recipient deactivated.');
+      await load('Recipients');
+    } catch (e: any) { setError(e.message); }
+  };
+
+  const removeAudience = async (id: number) => {
+    if (!confirm('Delete this audience?')) return;
+    try {
+      await request(`/audiences/${id}`, { method: 'DELETE' });
+      setNotice('Audience deleted.');
+      await load('Audiences');
+    } catch (e: any) { setError(e.message); }
+  };
+
+  const removeCampaign = async (id: number) => {
+    if (!confirm('Delete this campaign?')) return;
+    try {
+      await request(`/campaigns/${id}`, { method: 'DELETE' });
+      setNotice('Campaign deleted.');
+      await load('Campaigns');
+    } catch (e: any) { setError(e.message); }
+  };
+
+
+  const openAiStudio = async (campaign: any) => {
+    const matchedAudience = audiences.find((a: any) => Number(a.audience_id) === Number(campaign.audience_id)) || audiences.find((a: any) => a.name === campaign.audience);
+    let storedConfig: any = null;
+    try {
+      if (campaign.campaign_id) {
+        const response = await request(`/campaigns/${campaign.campaign_id}/ai-config`);
+        storedConfig = response.config;
+      }
+    } catch {
+      storedConfig = null;
+    }
+    setAiStudioCampaign({ ...campaign, audience_id: matchedAudience?.audience_id || campaign.audience_id || '' });
+    setAiResult(null);
+    setAiNotice('');
+    setAiQuality(null);
+    setAiPage('generated');
+    setAiConfig({
+      scenario: storedConfig?.scenario || campaign.scenario || campaign.description || campaign.name || '',
+      tone: storedConfig?.tone || campaign.tone || 'Informative',
+      audience_id: matchedAudience?.audience_id || campaign.audience_id || '',
+      location: storedConfig?.location || campaign.location || 'All selected locations',
+      languages: storedConfig?.languages?.length ? storedConfig.languages : (campaign.languages?.length ? campaign.languages : ['English']),
+      channels: storedConfig?.channels?.length ? storedConfig.channels : (campaign.channels?.length ? campaign.channels : ['SMS']),
+      usePreferredLanguages: storedConfig?.usePreferredLanguages !== false && campaign.usePreferredLanguages !== false,
+    });
+  };
+
+  const closeAiStudio = () => {
+    setAiStudioCampaign(null);
+    setAiResult(null);
+    setAiNotice('');
+    setAiQuality(null);
+    setAiPage('generated');
+  };
+
+  const generateAiContent = async () => {
+    if (!aiStudioCampaign) return;
+    setAiGenerating(true);
+    setAiNotice('');
+    setError('');
+    try {
+      const selectedAudience = audiences.find((a: any) => Number(a.audience_id) === Number(aiConfig.audience_id));
+      const result = await request('/ai/generate-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaign: aiStudioCampaign.name,
+          scenario: aiConfig.scenario,
+          audience: selectedAudience?.name || aiStudioCampaign.audience || 'General Public',
+          audience_id: aiConfig.audience_id ? Number(aiConfig.audience_id) : null,
+          location: aiConfig.location,
+          tone: aiConfig.tone,
+          languages: aiConfig.languages,
+          channels: aiConfig.channels,
+          usePreferredLanguages: aiConfig.usePreferredLanguages,
+        }),
+      });
+      setAiResult(result);
+      const generatedLanguages = Object.keys(result.localizedContent || {});
+      if (generatedLanguages.length) setAiConfig((current: any) => ({ ...current, languages: generatedLanguages }));
+      setAiNotice(result.notice || `Generated with ${result.model || 'gemini-2.5-flash'}. Review the localized versions before approval.`);
+      setAiPage('generated');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const runAiQualityCheck = async () => {
+    if (!aiStudioCampaign || !aiResult) return;
+    setAiQualityLoading(true);
+    setError('');
+    try {
+      const selectedAudience = audiences.find((a: any) => Number(a.audience_id) === Number(aiConfig.audience_id));
+      const result = await request('/ai/quality-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaign: aiStudioCampaign.name,
+          scenario: aiConfig.scenario,
+          audience: selectedAudience?.name || aiStudioCampaign.audience || 'General Public',
+          location: aiConfig.location,
+          tone: aiConfig.tone,
+          languages: aiConfig.languages,
+          channels: aiConfig.channels,
+          content: aiResult.localizedContent || {},
+          baseContent: aiResult.baseContent || '',
+        }),
+      });
+      setAiQuality(result);
+      setAiPage('quality');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setAiQualityLoading(false);
+    }
+  };
+
+  const toggleAiArrayValue = (key: 'languages' | 'channels', value: string) => {
+    setAiConfig((current: any) => {
+      const exists = current[key].includes(value);
+      const next = exists ? current[key].filter((x: string) => x !== value) : [...current[key], value];
+      return { ...current, [key]: next.length ? next : current[key] };
+    });
+  };
+
+  const seedRegionalAudiences = async () => {
+    try {
+      const result = await request('/admin/seed-regional-audiences', { method: 'POST' });
+      setNotice(result.message || 'Regional audiences are ready.');
+      await load('Audiences');
+    } catch (e: any) { setError(e.message); }
+  };
+
+  const removeTemplate = async (id: number) => {
+    if (!confirm('Delete this communication template?')) return;
+    try {
+      await request(`/templates/${id}`, { method: 'DELETE' });
+      setNotice('Template deleted.');
+      await load('Templates');
+    } catch (e: any) { setError(e.message); }
+  };
+
+  const filteredRecipients = recipients.filter((r) =>
+    `${r.first_name} ${r.last_name} ${r.email || ''} ${r.phone || ''}`.toLowerCase().includes(search.toLowerCase())
+  );
+  const filteredAudiences = audiences.filter((a) =>
+    `${a.name} ${a.description || ''}`.toLowerCase().includes(search.toLowerCase())
+  );
+  const filteredCampaigns = campaigns.filter((c) =>
+    `${c.name} ${c.description || ''} ${c.status || ''}`.toLowerCase().includes(search.toLowerCase())
+  );
+  const filteredTemplates = templates.filter((t) =>
+    `${t.title} ${t.template_type} ${t.content}`.toLowerCase().includes(search.toLowerCase())
+  );
+
+  if (!token) {
+    return (
+      <div className="login-shell">
+        <div className="login-brand-panel">
+          <div className="brand">
+            <div className="brand-mark">S</div>
+            <div>
+              <strong>SAMVAAD</strong>
+              <small>Multilingual Public Communication</small>
+            </div>
+          </div>
+          <div className="login-hero">
+            <span className="eyebrow">PUBLIC COMMUNICATION, SIMPLIFIED</span>
+            <h1>Connect communities.<br />Communicate without language barriers.</h1>
+            <p>Plan inclusive public communications, organize audiences and prepare campaigns across the languages your community speaks.</p>
+            <div className="hero-tags">
+              <span>✦ Multilingual by design</span>
+              <span>◉ Built for public service</span>
+              <span>✧ AI-ready workflows</span>
+            </div>
+          </div>
+        </div>
+        <div className="login-panel">
+          <form className="login-card" onSubmit={doLogin}>
+            <div className="lock-icon">⌑</div>
+            <span className="eyebrow dark">ADMIN PORTAL</span>
+            <h2>Welcome back</h2>
+            <p>Sign in to manage your communication workspace.</p>
+            <label>Email address</label>
+            <input value={login.email} onChange={(e) => setLogin({ ...login, email: e.target.value })} />
+            <label>Password</label>
+            <input type="password" value={login.password} onChange={(e) => setLogin({ ...login, password: e.target.value })} />
+            <button className="primary full">Sign in <span>→</span></button>
+            {error && <div className="error">{error}</div>}
+            <small className="demo">Demo: admin@communication.com / Admin@123</small>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  const pageMeta: Record<Tab, { eyebrow: string; title: string; subtitle: string }> = {
+    Dashboard: { eyebrow: 'OVERVIEW', title: 'Dashboard', subtitle: 'Monitor your public communication workspace at a glance.' },
+    Recipients: { eyebrow: 'AUDIENCE MANAGEMENT', title: 'Recipients', subtitle: 'Manage the individuals who receive public-awareness communications.' },
+    Audiences: { eyebrow: 'AUDIENCE MANAGEMENT', title: 'Audiences', subtitle: 'Organize recipients into reusable communication groups.' },
+    Campaigns: { eyebrow: 'COMMUNICATION', title: 'Campaigns', subtitle: 'Create and manage public awareness campaigns.' },
+    Templates: { eyebrow: 'COMMUNICATION', title: 'Templates', subtitle: 'Create and manage reusable communication templates.' },
+  };
+
+  return (
+    <div className="portal">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="brand-mark">S</div>
+          <div>
+            <strong>SAMVAAD</strong>
+            <small>Multilingual Public Communication</small>
+          </div>
+        </div>
+
+        <div className="nav-section">
+          <span>OVERVIEW</span>
+          <button className={tab === 'Dashboard' ? 'nav-item active' : 'nav-item'} onClick={() => { closeAiStudio(); setTab('Dashboard'); setSearch(''); }}>
+            <i>▦</i> Dashboard
+          </button>
+        </div>
+
+        <div className="nav-section">
+          <span>COMMUNICATION</span>
+          {navItems.filter(x => ['Campaigns', 'Templates'].includes(x.key)).map(item => (
+            <button key={item.key} className={tab === item.key ? 'nav-item active' : 'nav-item'} onClick={() => { closeAiStudio(); setTab(item.key); setSearch(''); }}>
+              <i>{item.icon}</i> {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="nav-section">
+          <span>AUDIENCE</span>
+          {navItems.filter(x => ['Recipients', 'Audiences'].includes(x.key)).map(item => (
+            <button key={item.key} className={tab === item.key ? 'nav-item active' : 'nav-item'} onClick={() => { closeAiStudio(); setTab(item.key); setSearch(''); }}>
+              <i>{item.icon}</i> {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="sidebar-bottom">
+          <button className="profile-card" onClick={() => openModal('profile')}>
+            <div className="avatar">{(admin?.full_name || 'S').charAt(0).toUpperCase()}</div>
+            <div>
+              <strong>{admin?.full_name || 'System Admin'}</strong>
+              <small>{admin?.email || 'Administrator'}</small>
+            </div>
+            <span>⋮</span>
+          </button>
+          <button className="logout-link" onClick={logout}>↪ Logout</button>
+        </div>
+      </aside>
+
+      <section className="workspace">
+        <header className="topbar">
+          <div className="topbar-spacer" />
+          <div className="top-actions">
+            <div className="global-search">⌕ <input placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+            <button className="icon-btn" title="Help">?</button>
+            <button className="icon-btn" title="Notifications">♢</button>
+            <button className="mini-avatar" onClick={() => openModal('profile')}>{(admin?.full_name || 'S').charAt(0).toUpperCase()}</button>
+          </div>
+        </header>
+
+        <main className="content">
+          <div className="page-heading">
+            <div>
+              <span className="eyebrow dark">{pageMeta[tab].eyebrow}</span>
+              <h1>{pageMeta[tab].title}</h1>
+              <p>{pageMeta[tab].subtitle}</p>
+            </div>
+            <div className="heading-actions">
+              {tab === 'Recipients' && <button className="outline-btn">⇧ Import CSV</button>}
+              {tab === 'Recipients' && <button className="primary" onClick={() => openModal('recipient')}>＋ Add Recipient</button>}
+              {tab === 'Audiences' && <><button className="outline-btn" onClick={seedRegionalAudiences}>＋ Add regional audiences</button><button className="primary" onClick={() => openModal('audience')}>＋ Create Audience</button></>}
+              {tab === 'Campaigns' && <button className="primary" onClick={() => openModal('campaign')}>＋ Create Campaign</button>}
+              {tab === 'Templates' && <button className="primary" onClick={() => openModal('template')}>＋ New Template</button>}
+            </div>
+          </div>
+
+          {error && <div className="error banner">{error}</div>}
+          {notice && <div className="notice banner">{notice}<button onClick={() => setNotice('')}>×</button></div>}
+
+          {aiStudioCampaign ? (
+            <CommunicationComposer
+              campaign={aiStudioCampaign}
+              audiences={audiences}
+              config={aiConfig}
+              setConfig={setAiConfig}
+              result={aiResult}
+              notice={aiNotice}
+              generating={aiGenerating}
+              onGenerate={generateAiContent}
+              onBack={closeAiStudio}
+              onToggle={toggleAiArrayValue}
+              page={aiPage}
+              setPage={setAiPage}
+              quality={aiQuality}
+              qualityLoading={aiQualityLoading}
+              onQualityCheck={runAiQualityCheck}
+            />
+          ) : loading ? <div className="loading-card">Loading your workspace…</div> : (
+            <>
+              {tab === 'Dashboard' && (
+                <Dashboard stats={stats} campaigns={campaigns} audiences={audiences} onNavigate={setTab} />
+              )}
+
+              {tab === 'Recipients' && (
+                <section className="panel">
+                  <div className="panel-toolbar">
+                    <div>
+                      <h2>All Recipients</h2>
+                      <p>{filteredRecipients.length} of {recipients.length} recipients</p>
+                    </div>
+                    <span className="count-pill">{recipients.filter(r => r.status === 'ACTIVE').length} active</span>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>NAME</th><th>EMAIL</th><th>PHONE</th><th>LANGUAGE</th><th>LOCATION</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+                      <tbody>
+                        {filteredRecipients.map(r => (
+                          <tr key={r.recipient_id}>
+                            <td><strong>{r.first_name} {r.last_name}</strong></td>
+                            <td>{r.email || '—'}</td>
+                            <td>{r.phone || '—'}</td>
+                            <td>{r.language || '—'}</td>
+                            <td>{[r.city, r.state].filter(Boolean).join(', ') || '—'}</td>
+                            <td><span className={`status ${String(r.status).toLowerCase()}`}>{r.status}</span></td>
+                            <td className="actions"><button title="Edit" onClick={() => openModal('recipient', { ...r })}>✎</button><button title="Deactivate" className="danger-icon" onClick={() => removeRecipient(r.recipient_id)}>♢</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {tab === 'Audiences' && (
+                <section className="panel">
+                  <div className="panel-toolbar"><div><h2>Audience Groups</h2><p>Reusable groups for targeted campaigns.</p></div><span className="count-pill">{audiences.length} audience{audiences.length === 1 ? '' : 's'}</span></div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>NAME</th><th>DESCRIPTION</th><th>RECIPIENTS</th><th>CREATED</th><th>ACTIONS</th></tr></thead>
+                      <tbody>
+                        {filteredAudiences.map(a => (
+                          <tr key={a.audience_id}>
+                            <td><strong>{a.name}</strong></td><td>{a.description || '—'}</td><td><span className="member-number">{a.members}</span></td><td>{a.created_at ? new Date(a.created_at).toLocaleDateString('en-GB') : '—'}</td>
+                            <td className="actions"><button onClick={() => openModal('audience', { ...a })}>✎</button><button className="danger-icon" onClick={() => removeAudience(a.audience_id)}>♢</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {tab === 'Campaigns' && (
+                <section className="panel">
+                  <div className="panel-toolbar"><div><h2>Campaigns</h2><p>Review published campaigns, drafts and communication plans.</p></div><span className="count-pill">{campaigns.length} campaign{campaigns.length === 1 ? '' : 's'}</span></div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>CAMPAIGN</th><th>AUDIENCE</th><th>STATUS</th><th>DESCRIPTION</th><th>ACTIONS</th></tr></thead>
+                      <tbody>
+                        {filteredCampaigns.map(c => (
+                          <tr key={c.campaign_id}>
+                            <td><strong>{c.name}</strong></td><td>{c.audience || 'Not assigned'}</td><td><span className={`status ${String(c.status).toLowerCase()}`}>{c.status}</span></td><td>{c.description || '—'}</td>
+                            <td className="actions campaign-actions"><button className="ai-action" onClick={() => openAiStudio(c)}>Open Composer</button><button title="Edit campaign" onClick={() => openModal('campaign', { ...c, scenario: c.description || '', audience_id: audiences.find(a => a.name === c.audience)?.audience_id || '', location: 'All selected locations', languages: ['English'], channels: ['SMS'], tone: 'Informative' })}>✎</button><button title="Delete campaign" className="danger-icon" onClick={() => removeCampaign(c.campaign_id)}>♢</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {tab === 'Templates' && (
+                <section className="panel">
+                  <div className="panel-toolbar"><div><h2>Communication Templates</h2><p>Reusable SMS messages for awareness, education, emergencies and reminders.</p></div><span className="count-pill">{templates.length} templates</span></div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>TITLE</th><th>TYPE</th><th>CHANNEL</th><th>CONTENT</th><th>ACTIONS</th></tr></thead>
+                      <tbody>
+                        {filteredTemplates.map(t => (
+                          <tr key={t.template_id}>
+                            <td><strong>{t.title}</strong></td><td><span className="tag">{t.template_type}</span></td><td><span className="tag soft">{t.channel}</span></td><td className="template-content">{t.content}</td>
+                            <td className="actions"><button onClick={() => openModal('template', { ...t })}>✎</button><button className="danger-icon" onClick={() => removeTemplate(t.template_id)}>♢</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </main>
+      </section>
+
+      {modal && <Modal type={modal} editing={editing} setEditing={setEditing} audiences={audiences} onSave={() => saveEntity(modal)} onClose={closeModal} />}
     </div>
-    {modal&&<Modal type={modal} editing={editing} setEditing={setEditing} audiences={audiences} onSave={()=>saveEntity(modal)} onClose={closeModal}/>} 
-  </div>;
+  );
 }
 
-function Login({login,setLogin,doLogin,error}:any){return <div className="login-page"><div className="login-orbit orbit-a"></div><div className="login-orbit orbit-b"></div><div className="login-card-new"><div className="samvaad-logo"><div className="logo-symbol">S</div><div><strong>SAMVAAD</strong><small>Multilingual Public Communication Platform</small></div></div><div className="login-heading"><span>ADMIN CONSOLE</span><h1>Welcome back.</h1><p>Manage audiences, campaigns and public communications from one workspace.</p></div><form onSubmit={doLogin}><label>Email address<input type="email" value={login.email} onChange={e=>setLogin({...login,email:e.target.value})} required/></label><label>Password<div className="password-wrap"><input type="password" value={login.password} onChange={e=>setLogin({...login,password:e.target.value})} required/><span>⌁</span></div></label><button className="blue-button login-button">Sign in <span>→</span></button>{error&&<div className="form-error">{error}</div>}</form><div className="login-footer"><span>Secure administrator access</span><span>Samvaad v1.0</span></div></div></div>}
 
-function Sidebar({tab,go,admin,onProfile,logout}:any){return <aside className="sidebar-new"><div className="side-brand"><div className="logo-symbol small">S</div><div><strong>SAMVAAD</strong><small>COMMUNICATION CONTROL</small></div></div><div className="side-status"><span></span> Workspace online</div><nav><NavGroup title="WORKSPACE"><Nav label="Command Center" icon="⌂" active={tab==='Dashboard'} onClick={()=>go('Dashboard')}/></NavGroup><NavGroup title="AUDIENCE"><Nav label="Recipients" icon="◎" active={tab==='Recipients'} onClick={()=>go('Recipients')}/><Nav label="Audience Hub" icon="◈" active={tab==='Audiences'} onClick={()=>go('Audiences')}/></NavGroup><NavGroup title="COMMUNICATION"><Nav label="Campaigns" icon="◉" active={tab==='Campaigns'} onClick={()=>go('Campaigns')}/><Nav label="Message Library" icon="▤" active={tab==='Templates'} onClick={()=>go('Templates')}/><button className="side-create" onClick={()=>go('Campaigns')}><span>＋</span> New campaign <b>CREATE</b></button></NavGroup><NavGroup title="SYSTEM"><Nav label="Settings" icon="⚙" active={tab==='Settings'} onClick={()=>go('Settings')}/></NavGroup></nav><div className="side-bottom"><button className="side-profile" onClick={onProfile}><div className="avatar-new">{(admin?.full_name||'S').charAt(0).toUpperCase()}</div><div><strong>{admin?.full_name||'System Admin'}</strong><small>{admin?.email||'Administrator'}</small></div><span>›</span></button><button className="side-logout" onClick={logout}>↪ <span>Sign out</span></button></div></aside>}
-function NavGroup({title,children}:any){return <div className="nav-group"><div className="nav-title">{title}</div>{children}</div>}
-function Nav({label,icon,active,onClick}:any){return <button className={`nav-link ${active?'selected':''}`} onClick={onClick}><i>{icon}</i><span>{label}</span>{active&&<b></b>}</button>}
+function ScoreBar({ label, score, detail, compact = false }: any) {
+  const safe = Math.max(0, Math.min(100, Number(score ?? 0)));
+  return (
+    <div className={`score-item ${compact ? 'compact' : ''}`}>
+      <div className="score-head"><span>{label}</span><strong>{safe}%</strong></div>
+      <div className="score-track"><div className="score-fill" style={{ width: `${safe}%` }} /></div>
+      {detail && <small>{detail}</small>}
+    </div>
+  );
+}
 
-function Dashboard({admin,stats,campaigns,audiences,go,openCampaign}:any){const active=campaigns.find((c:any)=>c.status==='ACTIVE')||campaigns[0];return <div className="page dashboard-page"><div className="hero-heading"><div><span className="section-kicker">COMMAND CENTER</span><h1>Good morning, {admin?.full_name?.split(' ')[0]||'Admin'}.</h1><p>One place to prepare, organize and oversee public communication.</p></div><div className="date-box"><span>WORKSPACE STATUS</span><strong><i></i> Ready</strong></div></div><div className="metric-grid"><Metric label="Recipients" value={stats.recipients} note="Registered contacts" icon="◎" onClick={()=>go('Recipients')}/><Metric label="Audiences" value={stats.audiences} note="Target groups" icon="◈" onClick={()=>go('Audiences')}/><Metric label="Campaigns" value={stats.campaigns} note="Communication plans" icon="◉" onClick={()=>go('Campaigns')}/><Metric label="Templates" value={stats.templates} note="Reusable messages" icon="▤" onClick={()=>go('Templates')}/></div><div className="dashboard-columns"><section className="feature-card campaign-card"><div className="card-topline"><div><span className="section-kicker">CAMPAIGN FOCUS</span><h2>{active?.name||'No campaign created yet'}</h2></div>{active&&<Status value={active.status}/>}</div>{active?<><p>{active.description||'A public-awareness campaign ready for audience and communication configuration.'}</p><div className="focus-grid"><div><span>Audience</span><strong>{active.audience||'Not assigned'}</strong></div><div><span>Campaign ID</span><strong>#{active.campaign_id}</strong></div><div><span>Stage</span><strong>{active.status==='DRAFT'?'Planning':'Live workflow'}</strong></div></div></>:<button className="text-action" onClick={openCampaign}>Start your first campaign →</button>}<button className="card-link" onClick={()=>go('Campaigns')}>Open campaign workspace <span>↗</span></button></section><section className="feature-card action-card"><div className="card-topline"><div><span className="section-kicker">SHORTCUTS</span><h2>Move faster</h2></div><div className="shortcut-mark">＋</div></div><Action label="Add a recipient" onClick={()=>go('Recipients')}/><Action label="Build an audience" onClick={()=>go('Audiences')}/><Action label="Create a campaign" onClick={()=>go('Campaigns')}/><Action label="Write a message" onClick={()=>go('Templates')}/></section></div><section className="foundation-card"><div className="foundation-copy"><span className="section-kicker">MILESTONE 1 FOUNDATION</span><h2>Your communication workspace is connected.</h2><p>100 recipients · Karnataka Recipients · Dengue Awareness · 18 SMS templates</p></div><div className="foundation-badge"><strong>✓</strong><span>READY</span></div></section><div className="dashboard-note"><span>Audience coverage</span><strong>{audiences[0]?.name||'Karnataka Recipients'}</strong><em>{audiences[0]?.members||100} recipients mapped</em></div></div>}
-function Metric({label,value,note,icon,onClick}:any){return <button className="metric" onClick={onClick}><div className="metric-icon">{icon}</div><div className="metric-body"><span>{label}</span><strong>{value}</strong><small>{note}</small></div><b>↗</b></button>}
-function Action({label,onClick}:any){return <button className="action-row" onClick={onClick}><span>{label}</span><b>→</b></button>}
-function Status({value}:any){return <span className={`status-new ${String(value).toLowerCase()}`}><i></i>{value}</span>}
+function CommunicationComposer({ campaign, audiences, config, setConfig, result, notice, generating, onGenerate, onBack, onToggle, page, setPage, quality, qualityLoading, onQualityCheck }: any) {
+  const [previewChannel, setPreviewChannel] = useState(config.channels[0] || 'SMS');
+  const [previewLanguage, setPreviewLanguage] = useState(config.languages[0] || 'English');
+  const languages = ['English', 'Tamil', 'Telugu', 'Kannada', 'Hindi', 'Malayalam'];
+  const channels = ['SMS', 'WhatsApp'];
+  const selectedAudience = audiences.find((a: any) => Number(a.audience_id) === Number(config.audience_id));
+  const localized = result?.localizedContent || {};
+  const activeLanguage = localized[previewLanguage] ? previewLanguage : Object.keys(localized)[0] || 'English';
+  const previewText = result?.channelVersions?.[previewChannel]?.[activeLanguage] || localized[activeLanguage] || result?.baseContent || '';
+  const personalization = Number(result?.personalizationScore ?? 0);
+  const toneOptimization = Number(result?.toneOptimizationScore ?? 0);
 
-function PageHeader({kicker,title,desc,action}:any){return <div className="page-header"><div><span className="section-kicker">{kicker}</span><h1>{title}</h1><p>{desc}</p></div>{action}</div>}
-function RecipientPage({rows,total,onAdd,onEdit,onRemove}:any){return <div className="page"><PageHeader kicker="AUDIENCE / DIRECTORY" title="Recipient Directory" desc="Maintain the people and contact details used by Samvaad." action={<button className="blue-button" onClick={onAdd}>＋ Add recipient</button>}/><div className="data-panel"><div className="panel-intro"><div><h2>People in Samvaad</h2><p>{rows.length} shown from {total} registered recipients</p></div><span className="data-chip">{rows.filter((r:any)=>r.status==='ACTIVE').length} active</span></div><DataTable headers={['RECIPIENT','CONTACT','LANGUAGE','LOCATION','STATUS','']}>{rows.map((r:any)=><tr key={r.recipient_id}><td><div className="person-cell"><div className="table-avatar">{(r.first_name||'S').charAt(0)}</div><div><strong>{r.first_name} {r.last_name}</strong><small>Recipient #{r.recipient_id}</small></div></div></td><td><strong>{r.phone||'—'}</strong><small className="subline">{r.email||'No email'}</small></td><td><span className="language-pill">{r.language||'—'}</span></td><td>{[r.city,r.state].filter(Boolean).join(', ')||'—'}</td><td><Status value={r.status}/></td><td><RowActions edit={()=>onEdit(r)} remove={()=>onRemove(r.recipient_id)}/></td></tr>)}</DataTable></div></div>}
-function AudiencePage({rows,onAdd,onEdit,onRemove}:any){return <div className="page"><PageHeader kicker="AUDIENCE / SEGMENTS" title="Audience Hub" desc="Build reusable groups for focused public communication." action={<button className="blue-button" onClick={onAdd}>＋ New audience</button>}/><div className="audience-grid">{rows.map((a:any)=><article className="audience-card" key={a.audience_id}><div className="audience-icon">◈</div><div className="audience-card-head"><span>SEGMENT #{a.audience_id}</span><Status value="ACTIVE"/></div><h2>{a.name}</h2><p>{a.description||'Reusable communication audience.'}</p><div className="audience-stat"><strong>{a.members||0}</strong><span>recipients</span></div><div className="audience-actions"><button onClick={()=>onEdit(a)}>Edit segment</button><button onClick={()=>onRemove(a.audience_id)} className="delete-text">Delete</button></div></article>)}{rows.length===0&&<Empty title="No audiences yet" text="Create your first reusable audience segment." onClick={onAdd}/>}</div></div>}
+  if (page === 'quality' && result) {
+    const q = quality || {};
+    const overall = Number(q.overallScore ?? 0);
+    return (
+      <section className="communication-composer">
+        <div className="composer-head">
+          <div>
+            <span className="eyebrow dark">AI QUALITY & COMPLIANCE</span>
+            <h1>{campaign.name} · Validation</h1>
+            <p>Validate the generated communication before it can move to the distribution stage. This review combines Gemini evaluation with NLP-assisted checks.</p>
+          </div>
+          <button className="outline-btn" onClick={() => setPage('generated')}>← Back to Generated Content</button>
+        </div>
 
-function CampaignPage({rows,audiences,onAdd,onEdit,onRemove,draft,setDraft,step,setStep,onCreate}:any){const editingWizard=!draft.campaign_id;const next=()=>setStep((s:number)=>Math.min(7,s+1));const prev=()=>setStep((s:number)=>Math.max(1,s-1));const toggle=(key:string,val:string)=>setDraft({...draft,[key]:draft[key].includes(val)?draft[key].filter((x:string)=>x!==val):[...draft[key],val]});return <div className="page"><PageHeader kicker="COMMUNICATION / WORKSPACE" title="Campaign Workspace" desc="Plan a public-awareness communication from brief to review." action={<button className="blue-button" onClick={onAdd}>＋ Create campaign</button>}/>{draft&&<section className="studio"><div className="studio-head"><div><span className="section-kicker">CAMPAIGN STUDIO</span><h2>{draft.name||'Untitled campaign'}</h2></div><span className="draft-label">DRAFT BUILDER</span></div><div className="stepper">{steps.map((s,i)=><button key={s} className={`${step===i+1?'current':''} ${step>i+1?'done':''}`} onClick={()=>setStep((i+1) as CampaignStep)}><span>{step>i+1?'✓':String(i+1).padStart(2,'0')}</span>{s}</button>)}</div><div className="studio-body">{step===1&&<StudioInfo draft={draft} setDraft={setDraft}/>} {step===2&&<StudioAudience draft={draft} setDraft={setDraft} audiences={audiences}/>} {step===3&&<StudioContent draft={draft} setDraft={setDraft}/>} {step===4&&<StudioLanguages draft={draft} toggle={toggle}/>} {step===5&&<StudioChannels draft={draft} toggle={toggle}/>} {step===6&&<StudioSchedule draft={draft} setDraft={setDraft}/>} {step===7&&<StudioReview draft={draft} audiences={audiences}/>}</div><div className="studio-footer"><button className="ghost-button" onClick={prev} disabled={step===1}>← Back</button>{step<7?<button className="blue-button" onClick={next}>Continue <span>→</span></button>:<button className="blue-button" onClick={()=>{onCreate();setDraft(null)}}>Save campaign draft ✓</button>}</div></section>}
-  <div className="data-panel campaign-list"><div className="panel-intro"><div><h2>Saved campaigns</h2><p>{rows.length} campaign{rows.length===1?'':'s'} in the workspace</p></div></div><DataTable headers={['CAMPAIGN','AUDIENCE','STATUS','DESCRIPTION','']}>{rows.map((c:any)=><tr key={c.campaign_id}><td><strong>{c.name}</strong><small className="subline">Campaign #{c.campaign_id}</small></td><td>{c.audience||'Not assigned'}</td><td><Status value={c.status}/></td><td className="wide-cell">{c.description||'—'}</td><td><RowActions edit={()=>onEdit(c)} remove={()=>onRemove(c.campaign_id)}/></td></tr>)}</DataTable></div></div>}
-function StudioInfo({draft,setDraft}:any){return <StudioSection title="Campaign information" text="Give the communication a clear identity and purpose."><Field label="Campaign name"><input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="e.g. Dengue Awareness"/></Field><Field label="Purpose / description"><textarea rows={5} value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})} placeholder="What should this communication achieve?"/></Field><Field label="Initial status"><select value={draft.status} onChange={e=>setDraft({...draft,status:e.target.value})}><option>DRAFT</option><option>ACTIVE</option><option>COMPLETED</option></select></Field></StudioSection>}
-function StudioAudience({draft,setDraft,audiences}:any){return <StudioSection title="Choose an audience" text="Select the recipient group that this campaign is intended for."><div className="choice-list">{audiences.map((a:any)=><button key={a.audience_id} className={`choice-card ${String(draft.audience_id)===String(a.audience_id)?'chosen':''}`} onClick={()=>setDraft({...draft,audience_id:String(a.audience_id)})}><span className="choice-icon">◈</span><div><strong>{a.name}</strong><small>{a.members||0} recipients · {a.description||'Reusable audience segment'}</small></div><i>{String(draft.audience_id)===String(a.audience_id)?'✓':'○'}</i></button>)}</div></StudioSection>}
-function StudioContent({draft,setDraft}:any){return <StudioSection title="Prepare the message" text="Draft the core communication. Channel-specific delivery can be integrated later."><Field label="Message content"><textarea rows={10} value={draft.content} onChange={e=>setDraft({...draft,content:e.target.value})} placeholder="Write the public-awareness message here…"/></Field><div className="content-tip"><strong>Content tip</strong><span>Keep the message clear, actionable and suitable for the selected audience.</span></div></StudioSection>}
-function StudioLanguages({draft,toggle}:any){return <StudioSection title="Language coverage" text="Choose the languages that the campaign content will be prepared for."><div className="language-options">{['Kannada','English','Hindi','Telugu','Tamil'].map(l=><button key={l} className={draft.languages.includes(l)?'selected':''} onClick={()=>toggle('languages',l)}><span>{draft.languages.includes(l)?'✓':'+'}</span>{l}</button>)}</div></StudioSection>}
-function StudioChannels({draft,toggle}:any){return <StudioSection title="Communication channels" text="Select one or more channels for the campaign plan. Available integrations are clearly marked."><div className="channel-grid">{channels.map(c=><button key={c.id} className={`channel-card ${draft.channels.includes(c.id)?'selected':''}`} onClick={()=>toggle('channels',c.id)}><div className="channel-icon">{c.icon}</div><div><strong>{c.label}</strong><small>{c.desc}</small></div><div className="channel-check">{draft.channels.includes(c.id)?'✓':'○'}</div>{!c.ready&&<em>PLANNED</em>}</button>)}</div><div className="integration-note"><strong>Channel readiness</strong><span>SMS is available in the current Milestone 1 template foundation. Other channels are represented as integration-ready options.</span></div></StudioSection>}
-function StudioSchedule({draft,setDraft}:any){return <StudioSection title="Delivery schedule" text="Choose how the campaign should move forward after review."><div className="schedule-grid">{['Manual activation','Schedule for later'].map((x,i)=><button className={`schedule-card ${draft.schedule===x?'selected':''}`} key={x} onClick={()=>setDraft({...draft,schedule:x})}><span>{i===0?'◷':'◫'}</span><div><strong>{x}</strong><small>{i===0?'Keep the campaign in draft until an administrator activates it.':'Prepare a future date/time configuration.'}</small></div><b>{draft.schedule===x?'✓':'○'}</b></button>)}</div></StudioSection>}
-function StudioReview({draft,audiences}:any){const aud=audiences.find((a:any)=>String(a.audience_id)===String(draft.audience_id));return <StudioSection title="Review & validate" text="Check the campaign configuration before saving it to the workspace."><div className="review-grid"><ReviewItem label="Campaign" value={draft.name||'Untitled'}/><ReviewItem label="Audience" value={aud?.name||'Not selected'}/><ReviewItem label="Languages" value={draft.languages.join(', ')||'None'}/><ReviewItem label="Channels" value={draft.channels.join(', ')||'None'}/><ReviewItem label="Schedule" value={draft.schedule}/><ReviewItem label="Status" value={draft.status}/></div><div className={`validation ${draft.name&&draft.audience_id&&draft.content?'valid':'warning'}`}>{draft.name&&draft.audience_id&&draft.content?'✓ Configuration looks ready to save.':'! Add a campaign name, audience and content before saving.'}</div></StudioSection>}
-function ReviewItem({label,value}:any){return <div><span>{label}</span><strong>{value}</strong></div>}
-function StudioSection({title,text,children}:any){return <div className="studio-section"><div className="studio-section-title"><span className="section-kicker">STEP CONFIGURATION</span><h3>{title}</h3><p>{text}</p></div>{children}</div>}
-function Field({label,children}:any){return <label className="studio-field"><span>{label}</span>{children}</label>}
+        <div className="quality-hero panel">
+          <div className="quality-score-circle"><strong>{overall}</strong><span>/ 100</span></div>
+          <div className="quality-summary">
+            <span className="eyebrow dark">OVERALL QUALITY SCORE</span>
+            <h2>{overall >= 85 ? 'Ready for admin review' : overall >= 70 ? 'Review recommended' : 'Needs improvement'}</h2>
+            <p>{q.summary || 'Quality and compliance checks have been completed for the generated content.'}</p>
+            <div className="quality-badges"><span>Gemini evaluation</span><span>spaCy + Indic NLP checks</span><span>{Object.keys(localized).length} language versions</span></div>
+          </div>
+        </div>
 
-function TemplatePage({rows,onAdd,onEdit,onRemove}:any){return <div className="page"><PageHeader kicker="COMMUNICATION / LIBRARY" title="Message Library" desc="Create and maintain reusable public-awareness messages." action={<button className="blue-button" onClick={onAdd}>＋ New template</button>}/><div className="template-grid">{rows.map((t:any)=><article className="template-card" key={t.template_id}><div className="template-top"><span className="template-type">{t.template_type}</span><span className="channel-mini">{t.channel}</span></div><h2>{t.title}</h2><p>{t.content}</p><div className="template-bottom"><span>Template #{t.template_id}</span><div><button onClick={()=>onEdit(t)}>Edit</button><button onClick={()=>onRemove(t.template_id)} className="delete-text">Delete</button></div></div></article>)}{rows.length===0&&<Empty title="No templates yet" text="Create a reusable communication message." onClick={onAdd}/>}</div></div>}
-function SettingsPage({admin,onProfile,logout}:any){return <div className="page"><PageHeader kicker="SYSTEM / CONTROL" title="Settings" desc="Manage administrator access and Samvaad workspace preferences."/><div className="settings-layout"><section className="settings-main"><div className="settings-card"><div className="settings-card-head"><div><span>ACCOUNT</span><h2>Administrator profile</h2><p>Your identity within the Samvaad control center.</p></div><button className="ghost-button" onClick={onProfile}>Edit profile</button></div><div className="settings-profile"><div className="settings-avatar">{(admin?.full_name||'S').charAt(0).toUpperCase()}</div><div><strong>{admin?.full_name||'System Admin'}</strong><span>{admin?.email||'Administrator'}</span><em>Administrator · Active</em></div></div></div><div className="settings-card"><div className="settings-card-head"><div><span>SECURITY</span><h2>Access controls</h2><p>Core administrator security settings for this local environment.</p></div></div><SettingRow title="Administrator authentication" desc="JWT-based session authentication is enabled." state="Enabled"/><SettingRow title="Database connection" desc="Connected to the Milestone 1 communication database." state="Connected"/><SettingRow title="Workspace role" desc="Current account has administrator permissions." state="Admin"/></div></section><aside className="settings-aside"><div className="settings-aside-card"><span className="section-kicker">SAMVAAD</span><h2>Workspace identity</h2><p>Multilingual Public Communication Platform</p><div className="blue-rule"></div><small>Milestone 1 · Admin foundation</small></div><button className="danger-button" onClick={logout}>Sign out of Samvaad</button></aside></div></div>}
-function SettingRow({title,desc,state}:any){return <div className="setting-row"><div><strong>{title}</strong><p>{desc}</p></div><span>{state}</span></div>}
-function DataTable({headers,children}:any){return <div className="table-scroll"><table className="modern-table"><thead><tr>{headers.map((h:string,i:number)=><th key={i}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>}
-function RowActions({edit,remove}:any){return <div className="row-actions"><button onClick={edit} title="Edit">✎</button><button onClick={remove} title="Delete">×</button></div>}
-function Empty({title,text,onClick}:any){return <div className="empty-state"><div>＋</div><h2>{title}</h2><p>{text}</p><button className="blue-button" onClick={onClick}>Create now</button></div>}
+        <div className="quality-grid">
+          <section className="panel quality-panel">
+            <div className="section-title"><div><span className="eyebrow dark">QUALITY DIMENSIONS</span><h2>Communication quality</h2></div><span className="tag">0–100</span></div>
+            <div className="score-list">
+              <ScoreBar label="Grammar" score={q.grammarScore} detail={q.grammarNote} />
+              <ScoreBar label="Clarity" score={q.clarityScore} detail={q.clarityNote} />
+              <ScoreBar label="Tone appropriateness" score={q.toneScore} detail={q.toneNote} />
+              <ScoreBar label="Factual accuracy" score={q.factualAccuracyScore} detail={q.factualNote} />
+              <ScoreBar label="Sensitive content" score={q.sensitiveContentScore} detail={q.sensitiveNote} />
+              <ScoreBar label="Compliance" score={q.complianceScore} detail={q.complianceNote} />
+            </div>
+          </section>
 
-function Modal({type,editing,setEditing,audiences,onSave,onClose}:any){const title=type==='recipient'?(editing?.recipient_id?'Edit recipient':'Add recipient'):type==='audience'?(editing?.audience_id?'Edit audience':'Create audience'):type==='campaign'?(editing?.campaign_id?'Edit campaign':'Create campaign'):type==='template'?(editing?.template_id?'Edit template':'New message template'):'Administrator profile';const field=(key:string,label:string,t='text')=><label className="modal-field"><span>{label}</span><input type={t} value={editing?.[key]??''} onChange={e=>setEditing({...editing,[key]:e.target.value})}/></label>;return <div className="modal-layer" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className="modal-new"><header><div><span className="section-kicker">SAMVAAD / EDIT</span><h2>{title}</h2></div><button onClick={onClose}>×</button></header>{type==='recipient'&&<div className="modal-form-grid">{field('first_name','First name')}{field('last_name','Last name')}{field('email','Email','email')}{field('phone','Phone')}{field('age','Age','number')}{field('gender','Gender')}{field('state','State')}{field('district','District')}{field('city','City')}{field('language','Language')}{field('occupation','Occupation')}<label className="modal-field"><span>Status</span><select value={editing.status||'ACTIVE'} onChange={e=>setEditing({...editing,status:e.target.value})}><option>ACTIVE</option><option>INACTIVE</option></select></label></div>}{type==='audience'&&<div className="modal-single">{field('name','Audience name')}{field('description','Description')}</div>}{type==='campaign'&&<div className="modal-single">{field('name','Campaign name')}{field('description','Description')}<label className="modal-field"><span>Status</span><select value={editing.status||'DRAFT'} onChange={e=>setEditing({...editing,status:e.target.value})}><option>DRAFT</option><option>ACTIVE</option><option>COMPLETED</option></select></label><label className="modal-field"><span>Target audience</span><select value={editing.audience_id||''} onChange={e=>setEditing({...editing,audience_id:e.target.value})}><option value="">Select audience</option>{audiences.map((a:any)=><option key={a.audience_id} value={a.audience_id}>{a.name} ({a.members||0})</option>)}</select></label></div>}{type==='template'&&<div className="modal-single">{field('title','Template title')}<label className="modal-field"><span>Template type</span><select value={editing.template_type||'Awareness'} onChange={e=>setEditing({...editing,template_type:e.target.value})}><option>Awareness</option><option>Education</option><option>Emergency</option><option>Reminder</option><option>General</option></select></label><label className="modal-field"><span>Channel</span><select value={editing.channel||'SMS'} onChange={e=>setEditing({...editing,channel:e.target.value})}><option>SMS</option></select></label><label className="modal-field"><span>Message content</span><textarea rows={7} value={editing.content||''} onChange={e=>setEditing({...editing,content:e.target.value})}/></label></div>}{type==='profile'&&<div className="profile-modal"><div className="profile-banner"><div className="profile-big-avatar">{(editing?.full_name||'S').charAt(0).toUpperCase()}</div><div><h3>{editing?.full_name||'System Admin'}</h3><span>Administrator · Active</span></div></div>{field('full_name','Full name')}{field('email','Email','email')}<div className="security-note"><strong>Security</strong><span>Password and JWT session controls are managed by the current authentication service.</span></div></div>}<footer><button className="ghost-button" onClick={onClose}>Cancel</button><button className="blue-button" onClick={onSave}>Save changes</button></footer></div></div>}
+          <section className="panel quality-panel">
+            <div className="section-title"><div><span className="eyebrow dark">NLP ASSISTANCE</span><h2>Language analysis</h2></div><span className="tag soft">LOCAL CHECKS</span></div>
+            <div className="nlp-metrics">
+              <div><strong>{q.nlp?.sentenceCount ?? '—'}</strong><span>sentences analysed</span></div>
+              <div><strong>{q.nlp?.tokenCount ?? '—'}</strong><span>tokens analysed</span></div>
+              <div><strong>{q.nlp?.flagCount ?? 0}</strong><span>language flags</span></div>
+            </div>
+            <div className="nlp-engine-note"><strong>spaCy + Indic NLP Library</strong><p>Used for sentence/token analysis and Indian-language text normalization support. Semantic quality, factuality and compliance are evaluated by Gemini.</p></div>
+            {q.flags?.length ? <div className="quality-flags"><strong>Review flags</strong>{q.flags.map((flag: string, i: number) => <div key={i}>• {flag}</div>)}</div> : <div className="quality-pass">✓ No critical review flags detected</div>}
+          </section>
+        </div>
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+        <section className="panel quality-panel">
+          <div className="section-title"><div><span className="eyebrow dark">LOCALIZED VALIDATION</span><h2>Language versions</h2></div><span className="count-pill">Review before approval</span></div>
+          <div className="quality-language-grid">
+            {Object.entries(localized).map(([lang, text]: any) => (
+              <article key={lang} className="quality-language-card"><div><strong>{lang}</strong><span>{q.languageScores?.[lang] != null ? `${q.languageScores[lang]}% quality` : 'Generated version'}</span></div><p>{text}</p></article>
+            ))}
+          </div>
+        </section>
+
+        <div className="approval-bar quality-approval"><div><strong>Admin decision</strong><span>Approve only after reviewing the overall score, language versions and any flagged content.</span></div><button className="outline-btn" onClick={() => setPage('generated')}>Edit generated content</button><button className="primary" disabled={overall < 70}>Approve & Continue</button></div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="communication-composer">
+      <div className="composer-head">
+        <div>
+          <span className="eyebrow dark">GENERATED CONTENT</span>
+          <h1>{campaign.campaign_id ? campaign.name : 'Create communication'}</h1>
+          <p>Generate review-ready multilingual communication from the administrator's scenario, then inspect personalization and tone optimization before moving to quality validation.</p>
+        </div>
+        <button className="outline-btn" onClick={onBack}>← Back to Campaigns</button>
+      </div>
+
+      <div className="composer-grid">
+        <section className="panel composer-form">
+          <div className="section-title"><div><span className="eyebrow dark">CAMPAIGN BRIEF</span><h2>Communication context</h2></div><span className="tag">GEMINI AI</span></div>
+          <label className="form-field"><span>Scenario / communication brief</span><textarea rows={7} value={config.scenario} onChange={e => setConfig({ ...config, scenario: e.target.value })} placeholder="Describe what is happening, what people need to know and what action they should take." /></label>
+          <div className="form-grid">
+            <label className="form-field"><span>Target audience</span><select value={config.audience_id} onChange={e => setConfig({ ...config, audience_id: e.target.value })}><option value="">General Public</option>{audiences.map((a: any) => <option key={a.audience_id} value={a.audience_id}>{a.name} ({a.members} recipients)</option>)}</select></label>
+            <label className="form-field"><span>Location / city</span><input value={config.location} onChange={e => setConfig({ ...config, location: e.target.value })} placeholder="Chennai, Tamil Nadu" /></label>
+          </div>
+          <div className="form-grid">
+            <label className="form-field"><span>Tone</span><select value={config.tone} onChange={e => setConfig({ ...config, tone: e.target.value })}><option>Informative</option><option>Friendly</option><option>Urgent</option><option>Encouraging</option><option>Professional</option></select></label>
+            <div className="form-field"><span>Recipients</span><div className="recipient-summary"><strong>{selectedAudience?.members ?? 'All eligible'}</strong><small>{selectedAudience ? `${selectedAudience.name} members` : 'based on the selected audience'}</small></div></div>
+          </div>
+          <div className="preferred-language-toggle"><label><input type="checkbox" checked={config.usePreferredLanguages !== false} onChange={e => setConfig({ ...config, usePreferredLanguages: e.target.checked })} /> Use each recipient's preferred language when preparing the final message</label><small>{config.usePreferredLanguages !== false ? 'Audience language distribution will guide the localized versions.' : 'The selected language chips will be used for generation.'}</small></div>
+          <div className="choice-block"><span>Generate in languages</span><div className="choice-row">{languages.map(lang => <button type="button" key={lang} className={`choice-chip ${config.languages.includes(lang) ? 'selected' : ''}`} onClick={() => onToggle('languages', lang)}>{config.languages.includes(lang) ? '✓ ' : ''}{lang}</button>)}</div></div>
+          <div className="choice-block"><span>Delivery format</span><div className="choice-row">{channels.map(channel => <button type="button" key={channel} className={`choice-chip ${config.channels.includes(channel) ? 'selected' : ''}`} onClick={() => { setPreviewChannel(channel); onToggle('channels', channel); }}>{config.channels.includes(channel) ? '✓ ' : ''}{channel}</button>)}</div></div>
+          <button className="primary ai-generate-btn" onClick={onGenerate} disabled={generating || !config.scenario.trim()}>{generating ? 'Generating content…' : 'Generate Communication'}</button>
+          {result && <div className="ai-provider-note">Generated with {result.model || 'gemini-2.5-flash'}. Review the localized versions before approval.</div>}
+          {notice && !result && <div className="ai-provider-note">{notice}</div>}
+        </section>
+
+        <section className="panel generated-panel">
+          <div className="section-title"><div><span className="eyebrow dark">AI OUTPUT</span><h2>{result ? 'Generated communication' : 'Ready for generation'}</h2></div>{result && <span className="status active">Generated</span>}</div>
+          {!result ? <div className="ai-empty"><div>✦</div><h3>Your communication will appear here</h3><p>Enter the scenario, select the audience, languages and channels, then generate the final drafts.</p></div> : (
+            <>
+              <div className="generated-meta"><span>{result.provider || 'Google Gemini'}</span><span>{result.recipientCount ?? 'All'} recipients</span><span>{Object.keys(localized).length} languages</span><span>{config.channels.join(' + ')}</span></div>
+              {result.languageDistribution && <div className="language-distribution"><strong>Recipient language distribution</strong><div>{Object.entries(result.languageDistribution).map(([lang, count]: any) => <span key={lang}>{lang} <b>{count}</b></span>)}</div></div>}
+
+              <div className="ai-insight-grid">
+                <article className="ai-insight-card"><div className="insight-title"><span>Audience personalization</span><strong>{personalization}%</strong></div><div className="score-track"><div className="score-fill" style={{ width: `${personalization}%` }} /></div><p>{result.personalizationSummary || 'Content is adapted to the selected audience, location and recipient language preferences.'}</p></article>
+                <article className="ai-insight-card"><div className="insight-title"><span>Sentiment & tone optimization</span><strong>{toneOptimization}%</strong></div><div className="score-track"><div className="score-fill" style={{ width: `${toneOptimization}%` }} /></div><p>{result.toneOptimizationSummary || `Message tone is optimized for ${config.tone.toLowerCase()} public communication.`}</p></article>
+              </div>
+
+              <div className="language-results">{Object.entries(localized).map(([lang, text]: any) => <article className="localized-card" key={lang}><div className="localized-head"><strong>{lang}</strong><span>Localized version</span></div><p>{text}</p></article>)}</div>
+              <div className="preview-switcher"><strong>Delivery preview</strong><div className="preview-controls"><div>{Object.keys(localized).map((lang: string) => <button key={lang} className={activeLanguage === lang ? 'active' : ''} onClick={() => setPreviewLanguage(lang)}>{lang}</button>)}</div><div>{config.channels.map((channel: string) => <button key={channel} className={previewChannel === channel ? 'active' : ''} onClick={() => setPreviewChannel(channel)}>{channel}</button>)}</div></div></div>
+              <div className="delivery-previews">
+                {previewChannel === 'WhatsApp' && <div className="device-preview whatsapp-preview"><div className="device-top">WhatsApp · Preview</div><div className="chat-area"><div className="chat-bubble">{previewText}<small>10:42 ✓✓</small></div></div></div>}
+                {previewChannel === 'SMS' && <div className="device-preview sms-preview"><div className="device-top">Messages · Preview</div><div className="sms-recipient">+91 XXXXX XXXXX</div><div className="sms-bubble"><strong>{campaign.name}</strong><p>{previewText}</p><small>Now · {activeLanguage}</small></div></div>}
+              </div>
+              <div className="approval-bar"><div><strong>Next: AI Quality & Compliance</strong><span>Review the generated multilingual content first. The next page evaluates grammar, clarity, tone, factual accuracy, sensitive content and compliance.</span></div><button className="primary" onClick={onQualityCheck} disabled={qualityLoading}>{qualityLoading ? 'Running quality check…' : 'Continue to AI Quality & Compliance →'}</button></div>
+            </>
+          )}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function Dashboard({ stats, campaigns, audiences, onNavigate }: any) {
+  const active = campaigns.find((c: any) => c.status === 'ACTIVE') || campaigns[0];
+  return (
+    <>
+      <div className="welcome-row">
+        <div><h2>Welcome back, System Admin</h2><p>Here's what's happening with your communication platform.</p></div>
+        <span className="date-chip">Public Communication Workspace</span>
+      </div>
+      <div className="stat-grid">
+        {[
+          ['Recipients', stats.recipients, '♙', 'Manage people'],
+          ['Audiences', stats.audiences, '◈', 'Target groups'],
+          ['Campaigns', stats.campaigns, '◉', 'Communication plans'],
+          ['Templates', stats.templates, '▤', 'Reusable messages'],
+        ].map(([name, value, icon, helper]) => (
+          <button className="stat-card" key={String(name)} onClick={() => onNavigate(name as Tab)}>
+            <div className="stat-icon">{icon}</div><div><span>{name}</span><strong>{value}</strong><small>{helper}</small></div><b>→</b>
+          </button>
+        ))}
+      </div>
+      <div className="dashboard-grid">
+        <section className="panel campaign-highlight">
+          <div className="section-title"><div><span className="eyebrow dark">CURRENT CAMPAIGN</span><h2>{active?.name || 'No campaigns yet'}</h2></div>{active && <span className={`status ${String(active.status).toLowerCase()}`}>{active.status}</span>}</div>
+          {active ? <><p>{active.description || 'Public awareness campaign configured for your selected audience.'}</p><div className="campaign-meta"><div><span>Target audience</span><strong>{active.audience || 'Not assigned'}</strong></div><div><span>Campaign ID</span><strong>#{active.campaign_id}</strong></div></div></> : <p>Create your first campaign to get started.</p>}
+        </section>
+        <section className="panel quick-panel">
+          <div className="section-title"><div><span className="eyebrow dark">QUICK ACTIONS</span><h2>Manage workspace</h2></div></div>
+          <button onClick={() => onNavigate('Recipients')}>Manage recipients <span>→</span></button>
+          <button onClick={() => onNavigate('Audiences')}>Manage audiences <span>→</span></button>
+          <button onClick={() => onNavigate('Campaigns')}>Manage campaigns <span>→</span></button>
+          <button onClick={() => onNavigate('Templates')}>Manage templates <span>→</span></button>
+        </section>
+      </div>
+      <section className="panel milestone-panel">
+        <div><span className="eyebrow dark">WORKSPACE STATUS</span><h2>Communication workspace is ready</h2><p>Manage recipients, audience groups, campaigns and reusable communication templates.</p></div>
+        <div className="progress-ring">✓</div>
+      </section>
+    </>
+  );
+}
+
+function Modal({ type, editing, setEditing, audiences, onSave, onClose }: any) {
+  const title = type === 'recipient' ? (editing?.recipient_id ? 'Edit Recipient' : 'Add Recipient') :
+    type === 'audience' ? (editing?.audience_id ? 'Edit Audience' : 'Create Audience') :
+    type === 'campaign' ? (editing?.campaign_id ? 'Edit Campaign' : 'Create Campaign') :
+    type === 'template' ? (editing?.template_id ? 'Edit Template' : 'New Template') : 'Administrator Profile';
+
+  const field = (key: string, label: string, type = 'text') => (
+    <label className="form-field"><span>{label}</span><input type={type} value={editing?.[key] ?? ''} onChange={e => setEditing({ ...editing, [key]: e.target.value })} /></label>
+  );
+
+  return (
+    <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-card">
+        <div className="modal-header"><div><span className="eyebrow dark">ADMIN MANAGEMENT</span><h2>{title}</h2></div><button className="close-btn" onClick={onClose}>×</button></div>
+
+        {type === 'recipient' && <div className="form-grid">
+          {field('first_name', 'First name')}{field('last_name', 'Last name')}{field('email', 'Email', 'email')}{field('phone', 'Phone')}
+          {field('age', 'Age', 'number')}{field('gender', 'Gender')}{field('state', 'State')}{field('district', 'District')}
+          {field('city', 'City')}{field('language', 'Language')}{field('occupation', 'Occupation')}
+          <label className="form-field"><span>Status</span><select value={editing.status || 'ACTIVE'} onChange={e => setEditing({ ...editing, status: e.target.value })}><option>ACTIVE</option><option>INACTIVE</option></select></label>
+        </div>}
+
+        {type === 'audience' && <div className="form-grid single">{field('name', 'Audience name')}{field('description', 'Description')}</div>}
+
+        {type === 'campaign' && <div className="form-grid single">
+          {field('name', 'Campaign name')}
+          <label className="form-field"><span>What is happening?</span><textarea rows={7} value={editing.scenario || editing.description || ''} onChange={e => setEditing({ ...editing, scenario: e.target.value, description: e.target.value })} placeholder="Describe the situation, what people need to know and what action they should take." /></label>
+          <label className="form-field"><span>Target audience</span><select value={editing.audience_id || ''} onChange={e => setEditing({ ...editing, audience_id: e.target.value })}><option value="">Select an audience</option>{audiences.map((a: any) => <option key={a.audience_id} value={a.audience_id}>{a.name} ({a.members})</option>)}</select></label>
+          <label className="form-field"><span>Location / city</span><input value={editing.location || ''} onChange={e => setEditing({ ...editing, location: e.target.value })} placeholder="Chennai, Tamil Nadu" /></label>
+          <label className="form-field"><span>Tone</span><select value={editing.tone || 'Informative'} onChange={e => setEditing({ ...editing, tone: e.target.value })}><option>Informative</option><option>Friendly</option><option>Urgent</option><option>Encouraging</option><option>Professional</option></select></label>
+          <div className="form-field"><span>Languages</span><div className="choice-row">{['English','Tamil','Telugu','Kannada','Hindi','Malayalam'].map(lang => <button type="button" key={lang} className={`choice-chip ${editing.languages?.includes(lang) ? 'selected' : ''}`} onClick={() => setEditing({ ...editing, languages: editing.languages?.includes(lang) ? editing.languages.filter((x: string) => x !== lang) : [...(editing.languages || []), lang] })}>{editing.languages?.includes(lang) ? '✓ ' : ''}{lang}</button>)}</div></div>
+          <div className="form-field"><span>Delivery channels</span><div className="choice-row">{['SMS','WhatsApp'].map(channel => <button type="button" key={channel} className={`choice-chip ${editing.channels?.includes(channel) ? 'selected' : ''}`} onClick={() => setEditing({ ...editing, channels: editing.channels?.includes(channel) ? editing.channels.filter((x: string) => x !== channel) : [...(editing.channels || []), channel] })}>{editing.channels?.includes(channel) ? '✓ ' : ''}{channel}</button>)}</div></div>
+          <label className="form-field"><span>Status</span><select value={editing.status || 'DRAFT'} onChange={e => setEditing({ ...editing, status: e.target.value })}><option>DRAFT</option><option>ACTIVE</option><option>COMPLETED</option></select></label>
+        </div>}
+
+        {type === 'template' && <div className="form-grid single">
+          {field('title', 'Template title')}
+          <label className="form-field"><span>Template type</span><select value={editing.template_type || 'Awareness'} onChange={e => setEditing({ ...editing, template_type: e.target.value })}><option>Awareness</option><option>Education</option><option>Emergency</option><option>Reminder</option><option>General</option></select></label>
+          <label className="form-field"><span>Channel</span><select value={editing.channel || 'SMS'} onChange={e => setEditing({ ...editing, channel: e.target.value })}><option>SMS</option></select></label>
+          <label className="form-field"><span>Message content</span><textarea rows={6} value={editing.content || ''} onChange={e => setEditing({ ...editing, content: e.target.value })} /></label>
+        </div>}
+
+        {type === 'profile' && <div className="profile-edit">
+          <div className="profile-hero"><div className="large-avatar">{(editing?.full_name || 'S').charAt(0).toUpperCase()}</div><div><h3>{editing?.full_name || 'System Admin'}</h3><p>Administrator</p></div></div>
+          {field('full_name', 'Full name')}{field('email', 'Email', 'email')}
+          <div className="profile-note">Your administrator account controls the communication workspace and its managed records.</div>
+        </div>}
+
+        <div className="modal-footer"><button className="outline-btn" onClick={onClose}>Cancel</button><button className="primary" onClick={onSave}>{type === 'campaign' ? 'Save & Open AI Composer' : 'Save changes'}</button></div>
+      </div>
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
